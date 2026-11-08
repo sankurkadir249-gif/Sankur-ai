@@ -7,6 +7,11 @@ on:
 permissions:
   contents: read
 
+env:
+  # Flutter surumu sabit: kod eski bir API kullaniyorsa en yeni stable'da derlenmeyebilir.
+  # "SDK version" / "version solving failed" hatasi alirsan bos birak:  FLUTTER_VERSION: ""
+  FLUTTER_VERSION: "3.32.8"
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -33,6 +38,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
       - name: Android platformunu uret
@@ -104,6 +110,36 @@ jobs:
           ''', encoding="utf-8")
           PY
 
+      - name: Eksik asset klasorlerini olustur
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          lines = Path("pubspec.yaml").read_text(encoding="utf-8").splitlines()
+          in_assets = False
+          base = 0
+          for line in lines:
+              if not in_assets:
+                  if re.match(r"^\s*assets:\s*(#.*)?$", line):
+                      in_assets = True
+                      base = len(line) - len(line.lstrip())
+                  continue
+              if not line.strip() or line.strip().startswith("#"):
+                  continue
+              m = re.match(r"^\s*-\s+(.+?)\s*(#.*)?$", line)
+              if m and len(line) - len(line.lstrip()) >= base:
+                  path = m.group(1).strip().strip("'\"")
+                  if ":" in path:
+                      continue
+                  if path.endswith("/"):
+                      Path(path).mkdir(parents=True, exist_ok=True)
+                  elif not Path(path).exists():
+                      print(f"::warning::pubspec'te yazili asset bulunamadi: {path}")
+              else:
+                  in_assets = False
+          PY
+
       - name: Paketleri indir
         run: flutter pub get
 
@@ -114,14 +150,39 @@ jobs:
         continue-on-error: true
         run: |
           flutter analyze --no-fatal-infos --no-fatal-warnings 2>&1 | tee analyze.log || true
-          { echo '## Analiz hatalari'; grep -E " error " analyze.log | head -30; } >> $GITHUB_STEP_SUMMARY
+          errs=$(grep -E " error " analyze.log | head -40 || true)
+          {
+            echo '## Analiz hatalari'
+            if [ -n "$errs" ]; then
+              echo '```'
+              echo "$errs"
+              echo '```'
+            else
+              echo 'Analizde hata yok.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: arm64 release APK derle
         run: |
           set +e
-          flutter build apk --release --target-platform android-arm64 2>&1 | tee build.log
+          flutter build apk --release --target-platform android-arm64 --no-tree-shake-icons 2>&1 | tee build.log
           code=${PIPESTATUS[0]}
-          { echo '## Derleme hatalari'; grep -nE "Error:|error:|Exception|What went wrong" -A3 build.log | head -60; } >> $GITHUB_STEP_SUMMARY
+          if [ "$code" -ne 0 ]; then
+            # Ilk Dart hatalari calisma sayfasinin en ustunde kirmizi kutuda gorunur
+            derrs=$(grep -E "\.dart:[0-9]+:[0-9]+: Error" build.log | awk '!s[$0]++' | head -10)
+            if [ -n "$derrs" ]; then
+              echo "$derrs" | sed 's/%/%25/g' | while IFS= read -r l; do echo "::error title=Dart hatasi::$l"; done
+            else
+              msg=$(sed -n '1,/^FAILURE: Build failed/p' build.log | tail -n 15 | tr '\n' ' ' | sed 's/%/%25/g')
+              echo "::error title=Derleme hatasi::$msg"
+            fi
+            {
+              echo '## Derleme hatalari (FAILURE satirinin ustundeki son 40 satir)'
+              echo '```'
+              sed -n '1,/^FAILURE: Build failed/p' build.log | tail -n 40
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
           exit $code
 
       - uses: actions/upload-artifact@v4
@@ -129,3 +190,4 @@ jobs:
           name: SANKUR-AI-ULTRA-APK
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+          
