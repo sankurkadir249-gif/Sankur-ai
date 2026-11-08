@@ -10,7 +10,7 @@ permissions:
 env:
   # Flutter surumu sabit: kod eski bir API kullaniyorsa en yeni stable'da derlenmeyebilir.
   # "SDK version" / "version solving failed" hatasi alirsan bos birak:  FLUTTER_VERSION: ""
-  FLUTTER_VERSION: "3.32.8"
+  FLUTTER_VERSION: "3.35.1"
 
 jobs:
   build:
