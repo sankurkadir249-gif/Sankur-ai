@@ -13,6 +13,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Projeyi bul ve köke al
+        run: |
+          if [ ! -f pubspec.yaml ]; then
+            for z in *.zip; do [ -f "$z" ] && unzip -oq "$z" -d _zip; done || true
+          fi
+          if [ ! -f pubspec.yaml ]; then
+            P=$(find . -name pubspec.yaml -not -path "./.git/*" -not -path "*/.dart_tool/*" | head -n1)
+            [ -z "$P" ] && { echo "pubspec.yaml bulunamadi"; exit 1; }
+            cp -r "$(dirname "$P")"/. .
+          fi
+          ls
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -27,7 +39,70 @@ jobs:
         run: flutter create --platforms=android --project-name sankur_ai_ultra --org com.sankur .
 
       - name: Android ayarlarini yap
-        run: python3 tool/patch_android.py
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          android = Path("android")
+          manifest = android / "app/src/main/AndroidManifest.xml"
+          t = manifest.read_text(encoding="utf-8")
+          for p in ("INTERNET", "RECORD_AUDIO"):
+              tag = f'<uses-permission android:name="android.permission.{p}"/>'
+              if tag not in t:
+                  t = t.replace("<application", tag + "\n    <application", 1)
+          tts = '<intent><action android:name="android.intent.action.TTS_SERVICE"/></intent>'
+          if tts not in t:
+              if "<queries>" in t:
+                  t = t.replace("<queries>", "<queries>" + tts, 1)
+              else:
+                  t = t.replace("<application", "<queries>" + tts + "</queries>\n    <application", 1)
+          manifest.write_text(t, encoding="utf-8")
+          for name in ("build.gradle.kts", "build.gradle"):
+              f = android / "app" / name
+              if f.exists():
+                  v = f.read_text(encoding="utf-8")
+                  v = v.replace("minSdk = flutter.minSdkVersion", "minSdk = 26")
+                  v = v.replace("minSdkVersion flutter.minSdkVersion", "minSdkVersion 26")
+                  v = v.replace("ndkVersion = flutter.ndkVersion", 'ndkVersion = "27.0.12077973"')
+                  v = v.replace("ndkVersion flutter.ndkVersion", 'ndkVersion "27.0.12077973"')
+                  f.write_text(v, encoding="utf-8")
+          d = android / "app/src/main/kotlin/com/sankur/sankur_ai_ultra"
+          d.mkdir(parents=True, exist_ok=True)
+          (d / "MainActivity.kt").write_text('''package com.sankur.sankur_ai_ultra
+
+          import android.app.ActivityManager
+          import android.content.Context
+          import android.os.StatFs
+          import io.flutter.embedding.android.FlutterActivity
+          import io.flutter.embedding.engine.FlutterEngine
+          import io.flutter.plugin.common.MethodChannel
+
+          class MainActivity : FlutterActivity() {
+              override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+                  super.configureFlutterEngine(flutterEngine)
+                  MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "sankur/device")
+                      .setMethodCallHandler { call, result ->
+                          if (call.method == "getMetrics") {
+                              try {
+                                  val m = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                                  val mi = ActivityManager.MemoryInfo()
+                                  m.getMemoryInfo(mi)
+                                  val s = StatFs(filesDir.absolutePath)
+                                  result.success(mapOf(
+                                      "totalRamBytes" to mi.totalMem,
+                                      "availableRamBytes" to mi.availMem,
+                                      "freeStorageBytes" to s.availableBytes
+                                  ))
+                              } catch (e: Exception) {
+                                  result.error("DEVICE_METRICS", e.message, null)
+                              }
+                          } else {
+                              result.notImplemented()
+                          }
+                      }
+              }
+          }
+          ''', encoding="utf-8")
+          PY
 
       - name: Paketleri indir
         run: flutter pub get
