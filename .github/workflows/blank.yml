@@ -110,8 +110,19 @@ jobs:
       - name: Ornek testi sil
         run: rm -f test/widget_test.dart
 
+      - name: Analiz (hatalari goster)
+        continue-on-error: true
+        run: |
+          flutter analyze --no-fatal-infos --no-fatal-warnings 2>&1 | tee analyze.log || true
+          { echo '## Analiz hatalari'; grep -E " error " analyze.log | head -30; } >> $GITHUB_STEP_SUMMARY
+
       - name: arm64 release APK derle
-        run: flutter build apk --release --target-platform android-arm64
+        run: |
+          set +e
+          flutter build apk --release --target-platform android-arm64 2>&1 | tee build.log
+          code=${PIPESTATUS[0]}
+          { echo '## Derleme hatalari'; grep -nE "Error:|error:|Exception|What went wrong" -A3 build.log | head -60; } >> $GITHUB_STEP_SUMMARY
+          exit $code
 
       - uses: actions/upload-artifact@v4
         with:
