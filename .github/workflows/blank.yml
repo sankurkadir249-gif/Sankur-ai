@@ -8,9 +8,9 @@ permissions:
   contents: read
 
 env:
-  # Flutter surumu sabit: kod eski bir API kullaniyorsa en yeni stable'da derlenmeyebilir.
-  # "SDK version" / "version solving failed" hatasi alirsan bos birak:  FLUTTER_VERSION: ""
-  FLUTTER_VERSION: "3.35.1"
+  # Projedeki paketler (sqflite, syncfusion_flutter_pdf...) Flutter 3.38+ istiyor.
+  # 3.47.9 = su an en yeni stable. Daha eski bir surume DUSURME, "pub get" hata verir.
+  FLUTTER_VERSION: "3.47.9"
 
 jobs:
   build:
@@ -145,6 +145,17 @@ jobs:
 
       - name: Ornek testi sil
         run: rm -f test/widget_test.dart
+
+      - name: Otomatik duzeltme (dart fix)
+        continue-on-error: true
+        run: |
+          dart fix --apply 2>&1 | tee fix.log || true
+          {
+            echo '## dart fix (sadece CI icinde uygulanir)'
+            echo '```'
+            tail -n 40 fix.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Analiz (hatalari goster)
         continue-on-error: true
