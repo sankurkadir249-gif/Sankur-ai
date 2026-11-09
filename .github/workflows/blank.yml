@@ -173,6 +173,30 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # YENI ADIM: model_storage.dart 93. satir (File -> Future<String> hatasi)
+      # dart fix'ten SONRA calisir ki satir numarasi derleyicinin gordugu dosyayla ayni olsun.
+      - name: model_storage.dart 93. satir duzeltmesi
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          p = Path("lib/services/model_storage.dart")
+          lines = p.read_text(encoding="utf-8").split("\n")
+          i = 92  # 93. satir
+          cur = lines[i] if len(lines) > i else ""
+          m = re.match(r"^(\s*return\s+)(.+?)(\s*;\s*)$", cur)
+          if not m or m.group(2).endswith(".path"):
+              print(f"::warning::93. satir beklenen formatta degil, degistirilmedi: {cur.strip()}")
+          else:
+              expr = m.group(2)
+              if not re.fullmatch(r"[\w.]+", expr):
+                  expr = f"({expr})"
+              lines[i] = f"{m.group(1)}{expr}.path{m.group(3)}"
+              p.write_text("\n".join(lines), encoding="utf-8")
+              print("Duzeltildi:", lines[i].strip())
+          PY
+
       - name: arm64 release APK derle
         run: |
           set +e
