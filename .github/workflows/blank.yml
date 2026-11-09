@@ -68,9 +68,15 @@ jobs:
                   v = f.read_text(encoding="utf-8")
                   v = v.replace("minSdk = flutter.minSdkVersion", "minSdk = 26")
                   v = v.replace("minSdkVersion flutter.minSdkVersion", "minSdkVersion 26")
-                  v = v.replace("ndkVersion = flutter.ndkVersion", 'ndkVersion = "27.0.12077973"')
-                  v = v.replace("ndkVersion flutter.ndkVersion", 'ndkVersion "27.0.12077973"')
+                  v = v.replace("ndkVersion = flutter.ndkVersion", 'ndkVersion = "28.2.13676358"')
+                  v = v.replace("ndkVersion flutter.ndkVersion", 'ndkVersion "28.2.13676358"')
                   f.write_text(v, encoding="utf-8")
+          # Gradle "Already watching path" hatasi icin dosya izlemeyi kapat
+          gp = android / "gradle.properties"
+          g = gp.read_text(encoding="utf-8") if gp.exists() else ""
+          if "org.gradle.vfs.watch" not in g:
+              g = g.rstrip("\n") + "\norg.gradle.vfs.watch=false\n"
+          gp.write_text(g, encoding="utf-8")
           d = android / "app/src/main/kotlin/com/sankur/sankur_ai_ultra"
           d.mkdir(parents=True, exist_ok=True)
           (d / "MainActivity.kt").write_text('''package com.sankur.sankur_ai_ultra
